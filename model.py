@@ -69,14 +69,14 @@ class ResidualBlock(nn.Module):
 
 # DarkNet53 정의
 class Darknet53(nn.Module):
-    def __init__(self):
+    def __init__(self, in_channels = 3):
         super().__init__()
 
         # Darknet 구조를 확인해보면
         # first_conv_layer ->
         # (conv_layer + res_block * repeat) * 5
 
-        self.first_conv = CNNBlock(3, 32, kernel_size=3, stride=1, padding=1)
+        self.first_conv = CNNBlock(in_channels, 32, kernel_size=3, stride=1, padding=1)
 
         self.residual_block1 = nn.Sequential(
             CNNBlock(32, 64, kernel_size=3, stride=2, padding=1),
@@ -162,14 +162,19 @@ class DetectionLayer(nn.Module):
         # 3 bbox per each cell
         self.pred = CNNBlock(in_channels = 2 * in_channels, out_channels = 3 * (1 + 4 + num_classes), kernel_size=1)
 
-
+    # format: (batch_size, 3, grid_size, grid_size, num_classes + 5)
     def forward(self, x):
         output = self.pred(x)
+        # x.size(0) : batch size / x.size(1) : RGB channels * ((c, x, y, w, h) + class_prob)
+        # x.size(2) : grid_size
+        # x.size(3) : grid_size
+        output = output.view(x.size(0), 3, self.num_classes + 5, x.size(2), x.size(3))
+        output = output.permute(0, 1, 3, 4, 2)
         return output
 
 
 
-class Yolov3(nn.Module):
+class YOLOv3(nn.Module):
     def __init__(self, num_classes = 3):
         super().__init__()
 
@@ -208,16 +213,29 @@ class Yolov3(nn.Module):
         return output_01, output_02, output_03
 
 
-# 모델 확인 코드
-x = torch.randn((1, 3, 416, 416)) # RGB format의 640 x 640 랜덤 이미지
-model = Yolov3(num_classes = 3)
-out = model(x)
-print(out[0].shape) # torch.Size([1, 3, 13, 13, 8]) / B, RGB, cell size, cell size, (c, x, y, w, h) + classes_prob
-print(out[1].shape) # torch.Size([1, 3, 26, 26, 8])
-print(out[2].shape) # torch.Size([1, 3, 52, 52, 8])
 
-# torch summary
-summary(model, input_size = (2, 3, 416, 416), device = "cpu")
+# Testing YOLO v3 model
+if __name__ == "__main__":
+    # Setting number of classes and image size
+    num_classes = 3
+    IMAGE_SIZE = 640
+
+    # Creating model and testing output shapes
+    model = YOLOv3(num_classes=num_classes)
+    x = torch.randn((1, 3, IMAGE_SIZE, IMAGE_SIZE))
+    out = model(x)
+    print(out[0].shape)
+    print(out[1].shape)
+    print(out[2].shape)
+
+    # Asserting output shapes
+    assert model(x)[0].shape == (1, 3, IMAGE_SIZE // 32, IMAGE_SIZE // 32, num_classes + 5) # B, RGB, cell size, cell size, (c, x, y, w, h) + classes_prob
+    assert model(x)[1].shape == (1, 3, IMAGE_SIZE // 16, IMAGE_SIZE // 16, num_classes + 5)
+    assert model(x)[2].shape == (1, 3, IMAGE_SIZE // 8, IMAGE_SIZE // 8, num_classes + 5)
+    print("Output shapes are correct!")
+
+    # torch summary
+    summary(model, input_size=(2, 3, 640, 640), device="cpu")
 
 # # Anchors
 # ANCHORS = [
