@@ -17,9 +17,9 @@ class CNNBlock(nn.Module):
         super().__init__()
 
         # **kwargs에는 kernel_size,  stride, padding 등 포함
-        self.conv = nn.Conv2d(in_channels, out_channels, bias = not use_batch_norm, **kwargs)
+        self.conv = nn.Conv2d(in_channels, out_channels, bias=not use_batch_norm, **kwargs)
         self.bn = nn.BatchNorm2d(out_channels)
-        self.activation = nn.LeakyReLU(0.1) # param : negative slope
+        self.activation = nn.LeakyReLU(0.1)  # param : negative slope
         self.use_batch_norm = use_batch_norm
 
     def forward(self, x):
@@ -43,10 +43,11 @@ class ResidualBlock(nn.Module):
         for _ in range(num_repeats):
             res_layers += [
                 nn.Sequential(
-                    nn.Conv2d(channels, channels // 2, kernel_size=1, stride = 1, padding = 0),
+                    # Conv2d 이후에 BatchNorm layer => bias = False
+                    nn.Conv2d(channels, channels // 2, kernel_size=1, bias=False, stride=1, padding=0),
                     nn.BatchNorm2d(channels // 2),
                     nn.LeakyReLU(0.1),
-                    nn.Conv2d(channels // 2, channels, kernel_size=3, stride = 1, padding = 1),
+                    nn.Conv2d(channels // 2, channels, kernel_size=3, bias=False, stride=1, padding=1),
                     nn.BatchNorm2d(channels),
                     nn.LeakyReLU(0.1),
                 )
@@ -62,14 +63,14 @@ class ResidualBlock(nn.Module):
             skip_connection = x
             # 1x1 conv -> bn -> leakyRelu -> 3x3 conv -> bn -> leakyRelu
             x = layer(x)
-            if self.use_residual: # use_residual이 과연 필요한가? -> 나중에 skip_connection 없을때 퍼포먼스 비교해보자!
+            if self.use_residual:  # use_residual이 과연 필요한가? -> 나중에 skip_connection 없을때 퍼포먼스 비교해보자!
                 x = x + skip_connection
         return x
 
 
 # DarkNet53 정의
 class Darknet53(nn.Module):
-    def __init__(self, in_channels = 3):
+    def __init__(self, in_channels=3):
         super().__init__()
 
         # Darknet 구조를 확인해보면
@@ -102,7 +103,6 @@ class Darknet53(nn.Module):
             CNNBlock(512, 1024, kernel_size=3, stride=2, padding=1),
             ResidualBlock(1024, num_repeats=4),
         )
-
 
     def forward(self, x):
         # TODO : Darknet53에서 output으로 나오는 세가지 feature map 생산
@@ -145,11 +145,10 @@ class YoloBlock(nn.Module):
             CNNBlock(out_channels, out_channels * 2, kernel_size=3, stride=1, padding=1),
         )
 
-
     def forward(self, x):
         route = self.route_conv(x)
         output = self.output_conv(route)
-        return route, output # route의 경우 upsampling을 거쳐 다음 yolo block으로 전달되고 output의 경우 DetectionLayer로 전달
+        return route, output  # route의 경우 upsampling을 거쳐 다음 yolo block으로 전달되고 output의 경우 DetectionLayer로 전달
 
 
 # YOLO Network에서 output 된 결과를 이용하여 prediction
@@ -160,7 +159,7 @@ class DetectionLayer(nn.Module):
         self.num_classes = num_classes
         # out_channels : ((c, x, y, w, h) + class_prob) per bounding box
         # 3 bbox per each cell
-        self.pred = CNNBlock(in_channels = 2 * in_channels, out_channels = 3 * (1 + 4 + num_classes), kernel_size=1)
+        self.pred = CNNBlock(in_channels=2 * in_channels, out_channels=3 * (1 + 4 + num_classes), kernel_size=1)
 
     # format: (batch_size, 3, grid_size, grid_size, num_classes + 5)
     def forward(self, x):
@@ -173,9 +172,8 @@ class DetectionLayer(nn.Module):
         return output
 
 
-
 class YOLOv3(nn.Module):
-    def __init__(self, num_classes = 3):
+    def __init__(self, num_classes=3):
         super().__init__()
 
         self.num_classes = num_classes
@@ -213,7 +211,6 @@ class YOLOv3(nn.Module):
         return output_01, output_02, output_03
 
 
-
 # Testing YOLO v3 model
 if __name__ == "__main__":
     # Setting number of classes and image size
@@ -229,7 +226,8 @@ if __name__ == "__main__":
     print(out[2].shape)
 
     # Asserting output shapes
-    assert model(x)[0].shape == (1, 3, IMAGE_SIZE // 32, IMAGE_SIZE // 32, num_classes + 5) # B, RGB, cell size, cell size, (c, x, y, w, h) + classes_prob
+    assert model(x)[0].shape == (1, 3, IMAGE_SIZE // 32, IMAGE_SIZE // 32,
+                                 num_classes + 5)  # B, RGB, cell size, cell size, (c, x, y, w, h) + classes_prob
     assert model(x)[1].shape == (1, 3, IMAGE_SIZE // 16, IMAGE_SIZE // 16, num_classes + 5)
     assert model(x)[2].shape == (1, 3, IMAGE_SIZE // 8, IMAGE_SIZE // 8, num_classes + 5)
     print("Output shapes are correct!")
@@ -237,89 +235,3 @@ if __name__ == "__main__":
     # torch summary
     summary(model, input_size=(2, 3, 640, 640), device="cpu")
 
-# # Anchors
-# ANCHORS = [
-#     [(0.28, 0.22), (0.38, 0.48), (0.9, 0.78)],
-#     [(0.07, 0.15), (0.15, 0.11), (0.14, 0.29)],
-#     [(0.02, 0.03), (0.04, 0.07), (0.08, 0.06)],
-# ]
-#
-# GRID_SIZE = [13, 26, 52]
-#
-# # Define Util & Loss function
-# # 참고 자료 : https://www.geeksforgeeks.org/yolov3-from-scratch-using-pytorch/
-# def iou(box1, box2, is_pred = True):
-#
-#     # TODO
-#     iou_score = None
-#
-#     return iou_score
-#
-#
-#
-# def nms(bboxes, iou_threshold, threshold):
-#     # TODO
-#     bboxes_nms = None
-#     return bboxes_nms
-#
-#
-# def convert_cells_to_bboxes():
-#     # TODO
-#     converted_bboxes = None
-#     return converted_bboxes.tolist()
-#
-#
-# def plot_image(image, boxes):
-#
-#     plt.show()
-#
-#
-# def save_checkpoint(model, optimizer, filename = "dr_bee_checkpoint.ptr.tar"):
-#     print("==> Saving checkpoint")
-#     checkpoint = {
-#         "state_dict": model.state_dict(),
-#         "optimizer": optimizer.state_dict(),
-#     }
-#     torch.save(checkpoint, filename)
-#
-#
-#
-# # Function to load checkpoint
-# def load_checkpoint(checkpoint_file, model, optimizer, lr, device):
-#     print("==> Loading checkpoint")
-#     checkpoint = torch.load(checkpoint_file, map_location=device)
-#     model.load_state_dict(checkpoint["state_dict"])
-#     optimizer.load_state_dict(checkpoint["optimizer"])
-#
-#     for param_group in optimizer.param_groups:
-#         param_group["lr"] = lr
-#
-#
-#
-#
-# class YoloLoss(nn.Module):
-#     def __init__(self):
-#         super().__init__()
-#
-#         self.mse = nn.MSELoss()
-#         self.bce = nn.BCEWithLogitsLoss()
-#         self.ce = nn.CrossEntropyLoss()
-#         self.sigmoid = nn.Sigmoid()
-#
-#
-#     def forward(self, pred, target, anchors):
-#
-#
-#         # TODO
-#         box_loss = 0
-#         class_loss = 0
-#         object_loss = 0
-#         no_object_loss = 0
-#
-#         return(
-#             box_loss
-#             + object_loss
-#             + no_object_loss
-#             + class_loss
-#         )
-#
