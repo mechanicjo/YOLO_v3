@@ -2,6 +2,7 @@ import torch
 import matplotlib.pyplot as plt
 import torch.nn as nn
 from torchinfo import summary
+import numpy as np
 
 # Anchors
 ANCHORS = [
@@ -125,6 +126,41 @@ def nms(bboxes, iou_threshold, threshold):
     return bboxes_nms
 
 
+# soft_nms(2017)
+def soft_nms(bboxes, iou_threshold, threshold, sigma = 0.5):
+
+    # B in original paper
+    bboxes = [box for box in bboxes if box[1] > threshold]
+
+    # D in original paper
+    bboxes_nms = []
+
+    while bboxes:
+        bboxes = sorted(bboxes, key=lambda x: x[1], reverse=True)
+
+        # M in original paper
+        first_box = bboxes.pop(0)
+
+        bboxes_nms.append(first_box)
+
+        for curr_box in bboxes:
+            # calculate iou(M, b_i)
+            ovr = iou(torch.tensor(first_box[2:]), torch.tensor(curr_box[2:]))
+
+            # Gaussian decay
+            weight = np.exp(-(ovr * ovr) / sigma)
+            curr_box[1] *= weight.item()
+
+        # discard bbox with low s_i score
+        # bboxes = [box for box in bboxes if box[1] > threshold]
+
+
+    return bboxes_nms
+
+
+
+
+
 def test_nms():
     # Test bounding boxes in [class, confidence score, x, y, width, height] format
     bboxes = [
@@ -140,12 +176,13 @@ def test_nms():
     confidence_threshold = 0.7
 
     # Perform NMS
-    result = nms(bboxes, iou_threshold, confidence_threshold)
+    # result = nms(bboxes, iou_threshold, confidence_threshold)
+    result = soft_nms(bboxes, iou_threshold, confidence_threshold)
 
     # Print results
     print("Bounding boxes after NMS:")
     for box in result:
-        print(f"Class: {box[0]}, Confidence: {box[1]:.2f}, Coordinates: {box[2:]}")
+        print(f"Class: {box[0]}, Confidence: {box[1]:.4f}, Coordinates: {box[2:]}")
 
 
 if __name__ == "__main__":
